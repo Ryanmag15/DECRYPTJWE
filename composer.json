@@ -1,0 +1,19 @@
+{
+    "name": "ryan/jwe",
+    "autoload": {
+        "psr-4": {
+            "Ryan\\Jwe\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Ryan Mathias",
+            "email": "ryanmag15@gmail.com"
+        }
+    ],
+    "require": {
+        "web-token/jwt-key-mgmt": "^3.4",
+        "web-token/jwt-encryption": "^3.4",
+        "vlucas/phpdotenv": "^5.6"
+    }
+}
