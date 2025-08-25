@@ -11,7 +11,10 @@ use Jose\Component\Encryption\Serializer\CompactSerializer;
 
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 $dotenv->load();
-function getBearerToken() {
+
+function getBearerToken()
+{
+    // URL corrigida conforme documentação
     $url = 'https://sbx.antifraude.j17bank.com.br/protocol/openid-connect/token';
     $data = http_build_query([
         'grant_type' => $_ENV['GRANT_TYPE'],
@@ -19,6 +22,7 @@ function getBearerToken() {
         'username' => $_ENV['USERNAME_LOGIN'],
         'password' => $_ENV['PASSWORD']
     ]);
+    
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
@@ -27,16 +31,28 @@ function getBearerToken() {
     ]);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    
     $result = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    
+    if ($httpCode !== 200) {
+        echo "Erro ao obter token. HTTP: $httpCode\n";
+        echo "Response: $result\n";
+        return null;
+    }
+    
     $json = json_decode($result, true);
     return $json['access_token'] ?? null;
 }
 
-// Use o token dinâmico:
 $bearerToken = getBearerToken();
+if (!$bearerToken) {
+    die("Falha ao obter token\n");
+}
 
-$apiUrl = 'https://sbx.antifraude.j17bank.com.br/J17/api/v1/processo';
+// URL corrigida conforme documentação
+        $apiUrl = 'https://sbx.antifraude.j17bank.com.br/J17/api/v1/processo';
 
 echo "J17 Bank Antifraude\n";
 echo "==================\n";
@@ -45,36 +61,38 @@ try {
     // Carregar chaves
     $publicKey = JWKFactory::createFromKey(file_get_contents('public.pem'));
     $privateKey = JWKFactory::createFromKey(file_get_contents('private.pem'));
-    
+
     // Setup JWE
     $keyManager = new AlgorithmManager([new RSAOAEP256()]);
     $contentManager = new AlgorithmManager([new A256GCM()]);
     $serializer = new CompactSerializer();
 
-    // pegar a foto e colocar ela como base64 eu.jpg
-    $fotoBase64 = base64_encode(file_get_contents('eu.jpg'));
+    // Carregar documento
+    $fotoBase64 = base64_encode(file_get_contents('eu.pdf'));
 
-    // Dados para enviar
+    // Estrutura corrigida conforme documentação
     $dados = [
-        "callbackUri" => "/",
+        "callbackUri" => "https://www.j17bank.com.br/", // Removido '/' inicial
         "fluxo" => "complete",
         "processo" => [
             "pessoa" => [
                 "cpf" => "03228935426",
-                "nome" => "João da Silva Santos",
+                "nome" => "Joao da Silva Santos",
                 "telefone" => "31987152444",
                 "email" => "joao.teste@exemplo.com"
             ],
             "expiracao" => "3600s",
             "documentos" => [
                 [
-                    "tipo" => "Documento RG",
-                    "conteudoBase64" => "$fotoBase64"
+                    "nome" => "Contrato", // Campo correto: "nome" não "tipo"
+                    "conteudoBase64" => (string) $fotoBase64
                 ]
-            ]
+            ] // Array de documentos conforme documentação
         ],
         "webhookUrl" => "https://webhook.site/4d370680-4b2b-4631-b552-aab70f1caa6e"
     ];
+
+    echo "Payload estruturado conforme documentação ✓\n";
 
     // Criptografar dados
     $jweBuilder = new JWEBuilder($keyManager, $contentManager);
@@ -88,13 +106,13 @@ try {
         ->addRecipient($publicKey)
         ->build();
 
-    $dadosCriptografados = $serializer->serialize($jwe, 0);
+    $dadosCriptografados = $serializer->serialize($jwe);
     echo "Dados criptografados ✓\n";
 
-    // Enviar para API
+    // Enviar para API com Content-Type correto
     $ch = curl_init($apiUrl);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/jose',
+        'Content-Type: application/jose', // Content-Type correto
         'Authorization: Bearer ' . $bearerToken
     ]);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -104,6 +122,11 @@ try {
 
     $resposta = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    if (curl_error($ch)) {
+        echo "Erro cURL: " . curl_error($ch) . "\n";
+    }
+    
     curl_close($ch);
 
     echo "HTTP Status: $httpCode\n";
@@ -112,14 +135,13 @@ try {
         // Verificar se resposta está criptografada
         if (strpos($resposta, '.') !== false && substr_count($resposta, '.') >= 4) {
             echo "Resposta criptografada - tentando descriptografar...\n";
-            
-            // Salvar resposta criptografada
+
             file_put_contents('resposta_criptografada.txt', $resposta);
-            
+
             try {
                 $decrypter = new JWEDecrypter($keyManager, $contentManager);
                 $jweResposta = $serializer->unserialize($resposta);
-                
+
                 if ($decrypter->decryptUsingKey($jweResposta, $privateKey, 0)) {
                     $respostaDescriptografada = $jweResposta->getPayload();
                     echo "\nRESPOSTA DESCRIPTOGRAFADA:\n";
