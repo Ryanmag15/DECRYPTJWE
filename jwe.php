@@ -57,7 +57,7 @@ try {
     // Dados para enviar
     $dados = [
         "callbackUri" => "/",
-        "fluxo" => "faceocr",
+        "fluxo" => "complete",
         "processo" => [
             "pessoa" => [
                 "cpf" => "03228935426",
@@ -67,10 +67,10 @@ try {
             ],
             "expiracao" => "3600s",
             "documentos" => [
-                // [
-                //     "tipo" => "Documento RG",
-                //     "conteudoBase64" => $fotoBase64
-                // ]
+                [
+                    "tipo" => "Documento RG",
+                    "conteudoBase64" => "$fotoBase64"
+                ]
             ]
         ],
         "webhookUrl" => "https://webhook.site/4d370680-4b2b-4631-b552-aab70f1caa6e"
