@@ -12,157 +12,183 @@ use Jose\Component\Encryption\Serializer\CompactSerializer;
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 $dotenv->load();
 
-function getBearerToken()
-{
-    // URL corrigida conforme documentação
-    $url = 'https://sbx.antifraude.j17bank.com.br/protocol/openid-connect/token';
-    $data = http_build_query([
-        'grant_type' => $_ENV['GRANT_TYPE'],
-        'client_id' => $_ENV['CLIENT_ID'],
-        'username' => $_ENV['USERNAME_LOGIN'],
-        'password' => $_ENV['PASSWORD']
-    ]);
-    
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/x-www-form-urlencoded'
-    ]);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    
-    $result = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    
-    if ($httpCode !== 200) {
-        echo "Erro ao obter token. HTTP: $httpCode\n";
-        echo "Response: $result\n";
-        return null;
+/**
+ * Função utilitária para descriptografar respostas JWE
+ */
+function descriptografarResposta($resposta) {
+    try {
+        $privateKey = JWKFactory::createFromKey(file_get_contents('private.pem'));
+        $serializer = new CompactSerializer();
+
+        if (strpos($resposta, '.') !== false && substr_count($resposta, '.') >= 4) {
+            $jwe = $serializer->unserialize($resposta);
+            $decrypter = new JWEDecrypter(
+                new AlgorithmManager([new RSAOAEP256()]),
+                new AlgorithmManager([new A256GCM()])
+            );
+
+            if ($decrypter->decryptUsingKey($jwe, $privateKey, 0)) {
+                $payload = $jwe->getPayload();
+                echo "RESPOSTA DESCRIPTOGRAFADA:\n$payload\n";
+                return $payload;
+            } else {
+                echo "Não conseguiu descriptografar. Verifique a chave.\n";
+            }
+        } else {
+            echo "Resposta não criptografada:\n$resposta\n";
+            return $resposta;
+        }
+    } catch (Exception $e) {
+        echo "Erro ao descriptografar: ".$e->getMessage()."\n";
     }
-    
-    $json = json_decode($result, true);
-    return $json['access_token'] ?? null;
+    return null;
 }
 
-$bearerToken = getBearerToken();
-if (!$bearerToken) {
-    die("Falha ao obter token\n");
+/**
+ * 01 - Gerar Token
+ */
+function gerarToken() {
+    try {
+        $url = 'https://sbx.antifraude.j17bank.com.br/protocol/openid-connect/token';
+        $data = http_build_query([
+            'grant_type' => $_ENV['GRANT_TYPE'],
+            'client_id'  => $_ENV['CLIENT_ID'],
+            'username'   => $_ENV['USERNAME_LOGIN'],
+            'password'   => $_ENV['PASSWORD']
+        ]);
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $data,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
+        $result = curl_exec($ch);
+        curl_close($ch);
+
+        $json = json_decode($result, true);
+        echo "Token: " . ($json['access_token'] ?? 'erro') . "\n";
+        return $json['access_token'] ?? null;
+    } catch (Exception $e) {
+        echo "Erro gerarToken: ".$e->getMessage()."\n";
+    }
+    return null;
 }
 
-// URL corrigida conforme documentação
-        $apiUrl = 'https://sbx.antifraude.j17bank.com.br/J17/api/v1/processo';
+/**
+ * 02 - Solicitar Processo (com criptografia e descriptografia)
+ */
+function solicitarProcesso($token) {
+    try {
+        $publicKey = JWKFactory::createFromKey(file_get_contents('public.pem'));
+        $serializer = new CompactSerializer();
+        $fotoBase64 = base64_encode(file_get_contents('eu.pdf'));
 
-echo "J17 Bank Antifraude\n";
-echo "==================\n";
-
-try {
-    // Carregar chaves
-    $publicKey = JWKFactory::createFromKey(file_get_contents('public.pem'));
-    $privateKey = JWKFactory::createFromKey(file_get_contents('private.pem'));
-
-    // Setup JWE
-    $keyManager = new AlgorithmManager([new RSAOAEP256()]);
-    $contentManager = new AlgorithmManager([new A256GCM()]);
-    $serializer = new CompactSerializer();
-
-    // Carregar documento
-    $fotoBase64 = base64_encode(file_get_contents('eu.pdf'));
-
-    // Estrutura corrigida conforme documentação
-    $dados = [
-        "callbackUri" => "https://www.j17bank.com.br/", // Removido '/' inicial
-        "fluxo" => "complete",
-        "processo" => [
-            "pessoa" => [
-                "cpf" => "03228935426",
-                "nome" => "Joao da Silva Santos",
-                "telefone" => "31987152444",
-                "email" => "joao.teste@exemplo.com"
-            ],
-            "expiracao" => "3600s",
-            "documentos" => [
-                [
-                    "nome" => "Contrato", // Campo correto: "nome" não "tipo"
-                    "conteudoBase64" => (string) $fotoBase64
+        $dados = [
+            "callbackUri" => "https://www.j17bank.com.br/",
+            "fluxo" => "complete",
+            "processo" => [
+                "pessoa" => [
+                    "cpf" => "03228935426",
+                    "nome" => "Joao da Silva Santos",
+                    "telefone" => "31987152444",
+                    "email" => "joao.teste@exemplo.com"
+                ],
+                "expiracao" => "3600s",
+                "documentos" => [
+                    ["nome" => "Contrato", "conteudoBase64" => $fotoBase64]
                 ]
-            ] // Array de documentos conforme documentação
-        ],
-        "webhookUrl" => "https://webhook.site/4d370680-4b2b-4631-b552-aab70f1caa6e"
-    ];
+            ],
+            "webhookUrl" => "https://webhook.site/69311e4f-cbbb-4163-b77f-0f14481fcc77"
+        ];
 
-    echo "Payload estruturado conforme documentação ✓\n";
-
-    // Criptografar dados
-    $jweBuilder = new JWEBuilder($keyManager, $contentManager);
-    $jwe = $jweBuilder
+        // Criptografar payload
+        $jwe = (new JWEBuilder(
+            new AlgorithmManager([new RSAOAEP256()]),
+            new AlgorithmManager([new A256GCM()])
+        ))
         ->create()
         ->withPayload(json_encode($dados))
-        ->withSharedProtectedHeader([
-            'alg' => 'RSA-OAEP-256',
-            'enc' => 'A256GCM'
-        ])
+        ->withSharedProtectedHeader(['alg' => 'RSA-OAEP-256','enc'=>'A256GCM'])
         ->addRecipient($publicKey)
         ->build();
 
-    $dadosCriptografados = $serializer->serialize($jwe);
-    echo "Dados criptografados ✓\n";
+        $dadosCriptografados = $serializer->serialize($jwe);
 
-    // Enviar para API com Content-Type correto
-    $ch = curl_init($apiUrl);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/jose', // Content-Type correto
-        'Authorization: Bearer ' . $bearerToken
-    ]);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $dadosCriptografados);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        // Enviar requisição
+        $ch = curl_init("https://sbx.antifraude.j17bank.com.br/J17/api/v1/processo");
+        curl_setopt_array($ch, [
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/jose',
+                'Authorization: Bearer ' . $token
+            ],
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $dadosCriptografados,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
+        $resposta = curl_exec($ch);
+        curl_close($ch);
 
-    $resposta = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    
-    if (curl_error($ch)) {
-        echo "Erro cURL: " . curl_error($ch) . "\n";
+        file_put_contents('resposta_solicitar_processo.txt', $resposta);
+        return descriptografarResposta($resposta);
+    } catch (Exception $e) {
+        echo "Erro solicitarProcesso: ".$e->getMessage()."\n";
     }
-    
-    curl_close($ch);
-
-    echo "HTTP Status: $httpCode\n";
-
-    if ($resposta) {
-        // Verificar se resposta está criptografada
-        if (strpos($resposta, '.') !== false && substr_count($resposta, '.') >= 4) {
-            echo "Resposta criptografada - tentando descriptografar...\n";
-
-            file_put_contents('resposta_criptografada.txt', $resposta);
-
-            try {
-                $decrypter = new JWEDecrypter($keyManager, $contentManager);
-                $jweResposta = $serializer->unserialize($resposta);
-
-                if ($decrypter->decryptUsingKey($jweResposta, $privateKey, 0)) {
-                    $respostaDescriptografada = $jweResposta->getPayload();
-                    echo "\nRESPOSTA DESCRIPTOGRAFADA:\n";
-                    echo $respostaDescriptografada . "\n";
-                    file_put_contents('resposta_final.json', $respostaDescriptografada);
-                } else {
-                    echo "Erro: Não conseguiu descriptografar\n";
-                    echo "Verifique se o J17 tem sua chave pública\n";
-                }
-            } catch (Exception $e) {
-                echo "Erro na descriptografia: " . $e->getMessage() . "\n";
-            }
-        } else {
-            echo "Resposta não criptografada:\n";
-            echo $resposta . "\n";
-        }
-    } else {
-        echo "Resposta vazia\n";
-    }
-
-} catch (Exception $e) {
-    echo "ERRO: " . $e->getMessage() . "\n";
 }
-?>
+
+/**
+ * 03 - Consultar Resultado
+ */
+function consultarResultado($token, $idProcesso) {
+    try {
+        $url = "https://sbx.antifraude.j17bank.com.br/J17/api/v1/consulta-resultado-processo?idProcesso={$idProcesso}";
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer '.$token],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
+        $resposta = curl_exec($ch);
+        curl_close($ch);
+
+        file_put_contents('resposta_consultar_resultado.txt', $resposta);
+        return descriptografarResposta($resposta);
+    } catch (Exception $e) {
+        echo "Erro consultarResultado: ".$e->getMessage()."\n";
+    }
+}
+
+/**
+ * 04 - Consultar Documento
+ */
+function consultarDocumento($token, $idDocumento) {
+    try {
+        $url = "https://sbx.antifraude.j17bank.com.br/J17/api/v1/consulta-documento/{$idDocumento}";
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer '.$token],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
+        $resposta = curl_exec($ch);
+        curl_close($ch);
+
+        file_put_contents('resposta_consultar_documento.txt', $resposta);
+        return descriptografarResposta($resposta);
+    } catch (Exception $e) {
+        echo "Erro consultarDocumento: ".$e->getMessage()."\n";
+    }
+}
+
+// ------------------------------
+// Exemplo de uso
+// ------------------------------
+$token = gerarToken();
+
+// Comente/descomente para testar
+// solicitarProcesso($token);
+// consultarResultado($token, "5042");
+// consultarDocumento($token, "363f3051-ea70-4abf-932b-2767a2fe66d9");
