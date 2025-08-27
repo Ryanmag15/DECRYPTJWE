@@ -30,23 +30,18 @@ O projeto utiliza um par de chaves (pública/privada) para criptografia. As chav
 - `public.pem`: Chave pública
 - `private.pem`: Chave privada
 
-Caso necessite gerar novas chaves, você pode usar o OpenSSL:
+Caso necessite gerar novas chaves, solicite a J17:
 
-```bash
-# Gerar chave privada
-openssl genpkey -algorithm RSA -out private.pem -pkcs8 -aes256
-
-# Gerar chave pública correspondente
-openssl rsa -pubout -in private.pem -out public.pem
-```
 
 ## Configuração
 
 1. Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
 
 ```env
-PRIVATE_KEY_PATH=private.pem
-PUBLIC_KEY_PATH=public.pem
+GRANT_TYPE=""
+CLIENT_ID=""
+USERNAME_LOGIN=""
+PASSWORD=""
 ```
 
 ## Como Usar
