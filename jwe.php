@@ -15,7 +15,7 @@ $dotenv->load();
 /**
  * Função utilitária para descriptografar respostas JWE
  */
-function descriptografarResposta($resposta) {
+function descriptografarResposta($resposta, $nomeArquivo = 'resposta.json') {
     try {
         $privateKey = JWKFactory::createFromKey(file_get_contents('private.pem'));
         $serializer = new CompactSerializer();
@@ -30,12 +30,22 @@ function descriptografarResposta($resposta) {
             if ($decrypter->decryptUsingKey($jwe, $privateKey, 0)) {
                 $payload = $jwe->getPayload();
                 echo "RESPOSTA DESCRIPTOGRAFADA:\n$payload\n";
+
+                // salvar JSON formatado em arquivo
+                $jsonArr = json_decode($payload, true);
+                if ($jsonArr) {
+                    file_put_contents($nomeArquivo, json_encode($jsonArr, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                } else {
+                    file_put_contents($nomeArquivo, $payload); // fallback se não for JSON válido
+                }
+
                 return $payload;
             } else {
                 echo "Não conseguiu descriptografar. Verifique a chave.\n";
             }
         } else {
             echo "Resposta não criptografada:\n$resposta\n";
+            file_put_contents($nomeArquivo, $resposta);
             return $resposta;
         }
     } catch (Exception $e) {
@@ -84,7 +94,7 @@ function solicitarProcesso($token) {
     try {
         $publicKey = JWKFactory::createFromKey(file_get_contents('public.pem'));
         $serializer = new CompactSerializer();
-        $fotoBase64 = base64_encode(file_get_contents('eu.pdf'));
+        $fotoBase64 = base64_encode(file_get_contents('contrato.pdf'));
 
         $dados = [
             "callbackUri" => "https://www.j17bank.com.br/",
@@ -133,7 +143,7 @@ function solicitarProcesso($token) {
         curl_close($ch);
 
         file_put_contents('resposta_solicitar_processo.txt', $resposta);
-        return descriptografarResposta($resposta);
+        return descriptografarResposta($resposta, 'resposta_solicitar_processo.json');
     } catch (Exception $e) {
         echo "Erro solicitarProcesso: ".$e->getMessage()."\n";
     }
@@ -155,7 +165,7 @@ function consultarResultado($token, $idProcesso) {
         curl_close($ch);
 
         file_put_contents('resposta_consultar_resultado.txt', $resposta);
-        return descriptografarResposta($resposta);
+        return descriptografarResposta($resposta, 'resposta_consultar_resultado.json');
     } catch (Exception $e) {
         echo "Erro consultarResultado: ".$e->getMessage()."\n";
     }
@@ -177,7 +187,7 @@ function consultarDocumento($token, $idDocumento) {
         curl_close($ch);
 
         file_put_contents('resposta_consultar_documento.txt', $resposta);
-        return descriptografarResposta($resposta);
+        return descriptografarResposta($resposta, 'resposta_consultar_documento.json');
     } catch (Exception $e) {
         echo "Erro consultarDocumento: ".$e->getMessage()."\n";
     }
@@ -189,6 +199,6 @@ function consultarDocumento($token, $idDocumento) {
 $token = gerarToken();
 
 // Comente/descomente para testar
-// solicitarProcesso($token);
-// consultarResultado($token, "5042");
-// consultarDocumento($token, "363f3051-ea70-4abf-932b-2767a2fe66d9");
+solicitarProcesso($token);
+consultarResultado($token, "5042");
+consultarDocumento($token, "363f3051-ea70-4abf-932b-2767a2fe66d9");

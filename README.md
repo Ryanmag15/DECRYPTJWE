@@ -1,70 +1,78 @@
-# JWE Antifraude - J17 Bank
+# DECRYPTJWE
 
-Este projeto demonstra como enviar dados criptografados via JWE (JSON Web Encryption) para a API de antifraude do J17 Bank utilizando PHP.
+Este projeto é responsável por manipular e descriptografar tokens JWE (JSON Web Encryption).
 
-## Funcionalidades
-- Carrega chaves pública e privada (PEM)
-- Codifica uma imagem em base64
-- Monta o payload de dados do processo antifraude
-- Criptografa os dados usando JWE (RSA-OAEP-256 + A256GCM)
-- Envia os dados criptografados para a API via cURL
-- Recebe e tenta descriptografar a resposta da API
-- Salva respostas criptografadas e descriptografadas em arquivos
+## Pré-requisitos
 
-## Estrutura
-- `jwe.php`: Script principal
-- `public.pem` / `private.pem`: Chaves para criptografia
-- `eu.jpg`: Imagem usada como documento
-- `resposta_criptografada.txt`: Resposta da API (criptografada)
-- `resposta_final.json`: Resposta da API (descriptografada)
-- `composer.json` / `composer.lock`: Gerenciamento de dependências
-- `vendor/`: Bibliotecas instaladas via Composer
+- PHP 7.4 ou superior
+- Composer
+- OpenSSL
 
-## Como executar
-1. Instale as dependências:
-   ```powershell
-   composer install
-   ```
-2. Adicione suas chaves `public.pem` e `private.pem` na raiz do projeto.
-3. Coloque a imagem `eu.jpg` na raiz do projeto.
-4. Execute o script:
-   ```powershell
-   php jwe.php
-   ```
+## Instalação
 
-## Principais bibliotecas
-- [web-token/jwt-encryption](https://github.com/web-token/jwt-encryption)
-- [spomky-labs/pki-framework](https://github.com/Spomky-Labs/pki-framework)
-- [symfony/console](https://github.com/symfony/console)
+1. Clone o repositório:
 
-## Exemplo de payload enviado
-```json
-{
-  "callbackUri": "/",
-  "fluxo": "faceocr",
-  "processo": {
-    "pessoa": {
-      "cpf": "12345678911",
-      "nome": "João da Silva Santos",
-      "telefone": "31987152400",
-      "email": "joao.teste@exemplo.com"
-    },
-    "expiracao": "3600s",
-    "documentos": [
-      {
-        "tipo": "Documento RG",
-        "conteudoBase64": "<base64 da imagem>"
-      }
-    ]
-  },
-  "webhookUrl": "https://webhook.site/4d370680-4b2b-4631-b552-aab70f1caa6e"
-}
+```bash
+git clone https://github.com/Ryanmag15/DECRYPTJWE.git
+cd DECRYPTJWE
 ```
 
-## Observações
-- Certifique-se de que as chaves estejam corretas e compatíveis com a API.
-- O token Bearer deve ser válido para autenticação.
-- O script salva as respostas para facilitar depuração.
+2. Instale as dependências via Composer:
 
-## Licença
-Este projeto é apenas para fins de demonstração e testes.
+```bash
+composer install
+```
+
+3. Configure as chaves
+
+O projeto utiliza um par de chaves (pública/privada) para criptografia. As chaves já estão incluídas no projeto:
+
+- `public.pem`: Chave pública
+- `private.pem`: Chave privada
+
+Caso necessite gerar novas chaves, você pode usar o OpenSSL:
+
+```bash
+# Gerar chave privada
+openssl genpkey -algorithm RSA -out private.pem -pkcs8 -aes256
+
+# Gerar chave pública correspondente
+openssl rsa -pubout -in private.pem -out public.pem
+```
+
+## Configuração
+
+1. Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
+
+```env
+PRIVATE_KEY_PATH=private.pem
+PUBLIC_KEY_PATH=public.pem
+```
+
+## Como Usar
+
+Para executar o projeto:
+
+```bash
+php jwe.php
+```
+
+## Estrutura do Projeto
+
+- `jwe.php`: Arquivo principal do projeto
+- `src/`: Diretório contendo os arquivos fonte
+- `private.pem`: Chave privada para descriptografia
+- `public.pem`: Chave pública para criptografia
+- `vendor/`: Diretório de dependências do Composer
+
+## Dependências Principais
+
+O projeto utiliza as seguintes bibliotecas principais:
+
+- `web-token/jwt-encryption`: Para manipulação de tokens JWE
+- `web-token/jwt-key-mgmt`: Para gerenciamento de chaves
+- `vlucas/phpdotenv`: Para gerenciamento de variáveis de ambiente
+
+## Suporte
+
+Em caso de dúvidas ou problemas, abra uma issue no repositório do GitHub.
